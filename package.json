@@ -1,0 +1,36 @@
+{
+  "name": "blend-r",
+  "version": "1.1.6",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc && npm link",
+    "start": "node dist/index.js"
+  },
+  "keywords": [],
+  "author": "Govind VE",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@tensorflow/tfjs-node": "^4.22.0",
+    "commander": "^12.1.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "fs-extra": "^11.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "antlr4ts": "^0.5.0-alpha.4",
+    "antlr4ts-cli": "^0.5.0-alpha.4",
+    "copyfiles": "^2.4.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  },
+  "bin": {
+    "blend-r": "./dist/index.js"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ]
+}

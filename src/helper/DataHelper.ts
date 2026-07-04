@@ -1,0 +1,253 @@
+import path from "path";
+import { IBasicProject } from "../types/basicOperationTypes";
+import { FileHelper } from "./fileHelper";
+import BlendDataGrammarHelper from "./grammarHelper/BlendDataGrammarHelper";
+import { IDataField, IDataModule } from "../types/dataOperationTypes";
+const basicDataTypes = ["string","object","boolean","number","any"];
+export default class DataHelper {
+        basicFilePath: string;
+        folderName: string;
+        folderPath: string;
+        basicFileContent: string;
+        configPath: string;
+        specPath: string;
+        constructor() {
+            this.folderPath = path.join(process.cwd());
+            this.folderName = path.basename(this.folderPath);
+            this.basicFilePath = path.join(this.folderPath, `${this.folderName}.basic`);
+            this.configPath = path.join(this.folderPath, '.basicConfig');
+            this.specPath = path.join(this.folderPath, 'spec');
+        }
+    
+     parseSpec() {
+        const basicFile: IBasicProject = JSON.parse(FileHelper.readFile(`${this.configPath}/basicConfig.json`));
+            let mainDataObjList = [];
+            
+            const dataFolderPath = path.join(this.folderPath, 'spec/data');
+            basicFile.dataModuleList.forEach(module => {
+                const filePath = path.join(dataFolderPath, `${module}.data`);
+                const specCode = FileHelper.readFile(filePath)
+                const json = new BlendDataGrammarHelper().parseBlendData(specCode);
+                if(!json.valid) {
+                    throw new Error("Error while parsing the syntax")
+                }
+                const moduleDataObject = json.moduleDataObject
+                mainDataObjList.push(moduleDataObject)
+                
+            })
+            // sectionDataObjList.push({
+            //     name: sectionName,
+            //     sectionDataList: mainDataObjList
+            // });
+            FileHelper.writeFile(`${this.configPath}/dataConfig.json`, JSON.stringify(mainDataObjList));
+        
+    }
+
+   parseJSONAndGenerateFiles() {
+        try {
+        const moduleDataList: IDataModule[] = JSON.parse(FileHelper.readFile(`${this.configPath}/dataConfig.json`));
+
+        
+            moduleDataList.forEach(async (moduleData) => {
+                const dataPath = path.join(this.folderPath, `src-gen/data/${moduleData.name}.ts`);
+
+                const imports = new Set<string>(); // Collect unique imports
+
+                // Generate class definitions
+                const classesCode = moduleData.dataList
+                    .map((curItem) => {
+                        // Collect imports for fields with types like "Module->ClassName"
+                        curItem.fields.forEach((field) => {
+                            const typeParts = field.type.split("->");
+                            if (typeParts.length === 2) {
+                                const [module, typeName] = typeParts;
+                                const baseTypeName = typeName.endsWith("[]") ? typeName.slice(0, -2) : typeName;
+                                imports.add(`import { ${baseTypeName} } from './${module}';`);
+                            }
+                        });
+
+                        // Generate the class code
+                        return `
+    export class ${curItem.name} {
+        constructor(
+    ${curItem.fields
+                                .map(
+                                    (field) =>
+                                        `        public ${field.name}: ${this.resolveType(field.type)}${!field.required ? '|undefined' : ''} = ${this.getDefaultValue(
+                                            field,moduleData
+                                        )},`
+                                )
+                                .join('\n')}
+        ) {}
+    
+        static fromJSON(jsonObj: any): ${curItem.name} {
+            return new ${curItem.name}(
+    ${curItem.fields
+                                .map((field) => this.generateFromJSONField(field))
+                                .join(',\n')}
+            );
+        }
+    
+        public toJSON(): any {
+            return {
+    ${curItem.fields
+                                .map((field) => this.generateToJSONField(field,moduleData))
+                                .join('\n')}
+            };
+        }
+    }
+
+
+export interface I_${curItem.name} {
+${curItem.fields
+            .map(
+                (field) =>
+`        ${field.name}: ${this.resolveType(field.type)}${field.required ? '|undefined' : ''},`
+        )
+    .join('\n')}
+}
+                        `;
+                    })
+                    .join('\n');
+
+                // Combine imports and class definitions
+                const finalCode = `
+    ${Array.from(imports).join('\n')}
+    
+    ${classesCode}
+    `;
+                FileHelper.writeFile(dataPath, finalCode);
+                // this.basicProjectContent.sectionList.forEach(section => {
+                //     section.expressModuleList.forEach(expressModule => {
+                //         // if (expressModule.includedDataModuleList.includes(moduleData.name)) {
+                //         if(section.name==sectionData.name) {
+                //             const expressDataPath = `${this.folderPath}/module/${section.name}/express/${section.name}-api/src-gen/data/${expressModule.name}/${moduleData.name}.ts`
+                //             FileHelper.writeFile(expressDataPath, finalCode);
+                //         }
+                            
+                //         // }
+                //     });
+
+                // })
+
+            });
+    } catch(e) {
+        
+    }
+    }
+
+
+    resolveType(type: string): string {
+        const typeParts = type.split("->");
+        const baseType = typeParts.length === 2 ? typeParts[1] : type;
+        return baseType.endsWith("[]") ? `${baseType.slice(0, -2)}[]` : baseType; // Handle array types
+    }
+
+    getDefaultValue(field: IDataField,curItem: IDataModule): string {
+        const typeParts = field.type.split("->");
+        const baseType = typeParts.length === 2 ? typeParts[1] : field.type;
+        if (baseType.endsWith("[]")) {
+            return "[]"; // Default value for arrays
+        }
+        if (typeParts.length === 2) {
+            const [, typeName] = typeParts;
+            const baseTypeName = typeName.endsWith("[]") ? typeName.slice(0, -2) : typeName;
+            return `new ${baseTypeName}()`; // Instantiate the imported class
+        }
+        
+        if(!basicDataTypes.includes(field.type)) {
+            const currentFieldType = curItem.dataList.find(item => item.name==field.type);
+            if(!currentFieldType) {
+                throw new Error(`unable to find out ${currentFieldType}`);
+            } else {
+                if(field.required) {
+                    return `new ${currentFieldType.name}()`
+                } else {
+                    return undefined
+                }
+            }
+        }
+         else {
+
+
+        switch (field.type) {
+            case "string":
+                return field.required ? "''" : "undefined";
+            case "object":
+                return field.required ? "{}" : "undefined";
+            case "boolean":
+                return field.required ? "false" : "undefined";
+            case "number":
+                return field.required ? "0" : "undefined";
+            default:
+                return "null";
+        }
+
+         }
+
+    }
+
+    generateFromJSONField(field: IDataField): string {
+        const typeParts = field.type.split("->");
+        const baseType = typeParts.length === 2 ? typeParts[1] : field.type;
+        if (baseType.endsWith("[]")) {
+            const elementType = baseType.slice(0, -2);
+            if (["string", "number", "boolean"].includes(elementType)) {
+                return `            jsonObj.${field.name} ?? []`;
+            }
+            return `            (jsonObj.${field.name} != null) ? jsonObj.${field.name}.map((item: any) => ${elementType}.fromJSON(item)) : []`;
+        }
+        if (typeParts.length === 2) {
+            const [, typeName] = typeParts;
+            const baseTypeName = typeName.endsWith("[]") ? typeName.slice(0, -2) : typeName;
+            return `            (jsonObj.${field.name} != null) ? ${baseTypeName}.fromJSON(jsonObj.${field.name}) : new ${baseTypeName}()`;
+        }
+        if(!basicDataTypes.includes(baseType)) {
+            const baseTypeName = baseType.endsWith("[]") ? baseType.slice(0, -2) : baseType;
+            return `            (jsonObj.${field.name} != null) ? ${baseTypeName}.fromJSON(jsonObj.${field.name}) : new ${baseTypeName}()`;
+        }
+        return `            (jsonObj.${field.name} !== null) ? jsonObj?.${field.name} : undefined`;
+    }
+
+    // generateToJSONField(field: IDataField): string {
+    //     const typeParts = field.type.split("->");
+    //     const baseType = typeParts.length === 2 ? typeParts[1] : field.type;
+    //     if (baseType.endsWith("[]")) {
+    //         const elementType = baseType.slice(0, -2);
+    //         if (["string", "number", "boolean"].includes(elementType)) {
+    //             return `            ${field.name}: this.${field.name} ?? [],`;
+    //         }
+    //         return `            ${field.name}: (this.${field.name} != null) ? this.${field.name}.map((x) => x.toJSON()) : [],`;
+    //     }
+    //     return `            ${field.name}: this.${field.name} != null ? this.${field.name} : undefined,`;
+    // }
+ generateToJSONField(field: IDataField,curItem: IDataModule): string {
+        // const typeParts = field.type.split("->");
+        // const baseType = typeParts.length === 2 ? typeParts[1] : field.type;
+        // if (baseType.endsWith("[]")) {
+        //     const elementType = baseType.slice(0, -2);
+        //     if (["string", "number", "boolean"].includes(elementType)) {
+        //         return `            ${field.name}: this.${field.name} ?? [],`;
+        //     }
+        //     return `            ${field.name}: (this.${field.name} != null) ? this.${field.name}.map((x) => x.toJson()) : [],`;
+        // }
+        // return `            ${field.name}: this.${field.name} != null ? this.${field.name} : undefined,`;
+        const typeParts = field.type.split("->");
+        const baseType = typeParts.length === 2 ? typeParts[1] : field.type;
+        if (baseType.endsWith("[]")) {
+            const elementType = baseType.slice(0, -2);
+            if (["string", "number", "boolean","object","any"].includes(elementType)) {
+                return `            ${field.name}: this.${field.name} ?? [],`;
+            }
+            return `            ${field.name}: (this.${field.name} != null) ? this.${field.name}.map((x) => x.toJSON()) : [],`;
+        } else {
+            if (["string", "number", "boolean","object","any"].includes(baseType)) {
+                return `${field.name}: this.${field.name} != null ? this.${field.name} : ${this.getDefaultValue(field,curItem)},`;
+            } else {
+                return `            ${field.name}: this.${field.name} != null ? this.${field.name}.toJSON() : ${this.getDefaultValue(field,curItem)}.toJSON(),`;
+            }
+        }
+        
+    }
+
+}
