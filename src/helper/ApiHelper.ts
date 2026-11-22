@@ -29,9 +29,9 @@ export default class ApiHelper {
         this.basicProjectContent.apiModuleList.forEach(apiModule => {
             const filePath = path.join(this.folderPath, `spec/api/${apiModule}.api`);
             const specCode = FileHelper.readFile(filePath);
-            const json = new BlendApiGrammarHelper().parseBlendApi(specCode, this.basicProjectContent.dataModuleList || []);
+            const json = new BlendApiGrammarHelper().parseBlendApi(specCode, this.basicProjectContent.dataModuleList || [], filePath);
             if (!json.isValid) {
-                throw new Error("Error while parsing the syntax");
+                throw new Error(`Error while parsing the syntax in ${path.relative(process.cwd(), filePath)}`);
             }
             mainApiObjList.push(json.json);
         });

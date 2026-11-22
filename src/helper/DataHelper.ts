@@ -27,9 +27,9 @@ export default class DataHelper {
             basicFile.dataModuleList.forEach(module => {
                 const filePath = path.join(dataFolderPath, `${module}.data`);
                 const specCode = FileHelper.readFile(filePath)
-                const json = new BlendDataGrammarHelper().parseBlendData(specCode);
+                const json = new BlendDataGrammarHelper().parseBlendData(specCode, filePath);
                 if(!json.valid) {
-                    throw new Error("Error while parsing the syntax")
+                    throw new Error(`Error while parsing the syntax in ${path.relative(process.cwd(), filePath)}`)
                 }
                 const moduleDataObject = json.moduleDataObject
                 mainDataObjList.push(moduleDataObject)

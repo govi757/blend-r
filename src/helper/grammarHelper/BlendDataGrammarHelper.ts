@@ -1,13 +1,24 @@
 import { CharStreams, CommonTokenStream } from "antlr4ts";
 import { BlendDataLexer } from "../../parser/blendData/src/grammar/BlendDataLexer";
 import { BlendDataParser, DataDefinitionContext, FieldContext } from "../../parser/blendData/src/grammar/BlendDataParser";
+import path from "node:path";
 
 export default class BlendDataGrammarHelper {
-       parseBlendData(code: string) {
+       parseBlendData(code: string, filePath: string = "<unknown>.data") {
+            const fileLabel = path.relative(process.cwd(), filePath) || filePath;
+            const syntaxErrorListener = {
+                syntaxError: (_recognizer: any, _offendingSymbol: any, line: number, charPositionInLine: number, msg: string) => {
+                    console.error(`❌ [${fileLabel}:${line}:${charPositionInLine}] Syntax error: ${msg}`);
+                }
+            };
             const inputStream = CharStreams.fromString(code);
             const lexer = new BlendDataLexer(inputStream);
+            lexer.removeErrorListeners();
+            lexer.addErrorListener(syntaxErrorListener);
             const tokenStream = new CommonTokenStream(lexer);
             const parser = new BlendDataParser(tokenStream);
+            parser.removeErrorListeners();
+            parser.addErrorListener(syntaxErrorListener);
             const mainSection = parser.program(); // Assuming the root rule is "program" that contains multiple sections
             const dataDefenitionList = mainSection.dataDefinition();
             let hasError = false;
@@ -19,7 +30,7 @@ export default class BlendDataGrammarHelper {
                     const dataName = dataDefinition.CAPITAL_IDENTIFIER().text;
                     if(dataSet.has(dataName)) {
                         hasError = true;
-                        console.error(`❌ Duplicate Data '${dataName}' found`)
+                        console.error(`❌ [${fileLabel}:${dataDefinition.start.line}] Duplicate Data '${dataName}'`)
                     }
                     dataSet.add(dataDefinition.CAPITAL_IDENTIFIER().text)
                     const fieldSet = new Set();
@@ -29,7 +40,7 @@ export default class BlendDataGrammarHelper {
                             const fieldName = field.IDENTIFIER().text;
                                 if(fieldSet.has(fieldName)) {
                                     hasError = true;
-                                    console.error(`❌ Duplicate field '${fieldName}' in '${dataName}'`)
+                                    console.error(`❌ [${fileLabel}:${field.start.line}] Duplicate field '${fieldName}' in '${dataName}'`)
                                 }
                                 fieldSet.add(fieldName);
                             return {
