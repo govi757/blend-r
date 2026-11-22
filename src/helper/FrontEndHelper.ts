@@ -132,7 +132,7 @@ ${this.generateLayoutCode(loChild)}
                     path = child.route && child.route != "" && child.route != "/" ? path + "/" + child.route : path;
                     acc[child.name] = generateRouterConstantObj(child.children);
                     if (index == children.length - 1) {
-                        path = path.split("/").slice(0, -1).join('_').toString();
+                        path = path.split("/").slice(0, -1).join('/').toString();
                         // const pathNumToBeRemoved = child.route.split("/").length;
                         // path = path.split("/").slice(0,-pathNumToBeRemoved).join('/').toString();
                     }
@@ -140,10 +140,10 @@ ${this.generateLayoutCode(loChild)}
                     path = child.route && child.route != "" && child.route != "/" ? path + "/" + child.route : path;
                     acc[child.name] = path;
                     const pathNumToBeRemoved = child.route.split("/").length;
-                    path = path.split("/").slice(0, -pathNumToBeRemoved).join('_').toString();
+                    path = path.split("/").slice(0, -pathNumToBeRemoved).join('/').toString();
 
                     if (index == children.length - 1) {
-                        path = path.split("/").slice(0, -1).join('_').toString();
+                        path = path.split("/").slice(0, -1).join('/').toString();
                         // const pathNumToBeRemoved = child.route.split("/").length;
                         // path = path.split("/").slice(0,-pathNumToBeRemoved).join('/').toString();
                     }

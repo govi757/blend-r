@@ -135,17 +135,17 @@ Authorization: localStorage.getItem("authToken")||""
     generateRolesGetterCode() {
         const code = `
         import type { RootState } from "@/redux/store/store";
-        import type { Role } from "./type";
-        export const selectRoles = (state: RootState) => state.roles.roles;
 
-// Generic checker
+${(this.basicProjectContent?.frontend?.roleList||[]).length>0?`// Generic checker
+    import type { Role } from "./type";
+        export const selectRoles = (state: RootState) => state.roles.roles;
 export const hasRole = (role: Role) => (state: RootState) =>
   state.roles.roles.includes(role);
 export const hasAnyRole = (roles: Role[]) => (state: RootState) =>
-  roles.some(role => state.roles.roles.includes(role));
+  roles.some(role => state.roles.roles.includes(role));`:''}
 
 ${
-    this.basicProjectContent.frontend.roleList.reduce((acc,role) => {
+    (this.basicProjectContent.frontend.roleList||[]).reduce((acc,role) => {
         acc = acc +  `
         export const has${role}Role = (state: RootState) =>
   state.roles.roles.includes("${role}");
@@ -158,10 +158,11 @@ ${
 
     }
     generateRolesTypeCode() {
-        const code = `
-        export type Role = ${this.basicProjectContent.frontend.roleList.map(role => `"${role}"`).join(' | ')};
-        `;
-        return this.basicProjectContent.frontend.roleList.length>0?code:'';
+        const code = (this.basicProjectContent.frontend.roleList||[]).length>0?`
+        export type Role = ${(this.basicProjectContent.frontend.roleList || []).map(role => `"${role}"`).join(' | ')};
+        `:`export type Role = 'admin';`;
+        // return (this.basicProjectContent.frontend.roleList||[]).length>0?code:'';
+        return code;
     }
 
     generateRoleRelatedFiles() {
@@ -213,7 +214,7 @@ ${
                 const sliceCode = this.generateSliceCode(apiSection);
                 const dataCode = this.generateApiDatacode(apiSection);
                 const actionCode = this.generateApiActioncode(apiSection, expressSection);
-                const selectorCode = this.generateApiSelectorCode(apiSection);
+                const selectorCode = this.generateApiSelectorCode(expressSection,apiSection);
                 // const sagaCode = this.generateSagaCode(apiSection);
                 FileHelper.writeFile(apiSectionSlicePath, sliceCode);
                 FileHelper.writeFile(apiSectionSelectorPath, selectorCode);
@@ -269,16 +270,23 @@ ${filteredApiListForData.length > 0 ? `import { ${filteredApiListForData.reduce(
             return acc
         }, '')} } from "./data";` : ''}
 
-        ${apiSection.apiList.reduce((acc, curVal) => {
-            if (curVal?.directOutput?.name) {
-                const [moduleName, dataName] = curVal?.directOutput?.name?.split("->");
-                if (dataName) {
-                    const dataTypeName = `${dataName?.replace("[]", "")}`;
-                    acc = acc + `import {${dataTypeName},I_${dataTypeName}} from "../../../data/${moduleName}";`;
+        ${(() => {
+            const importedDirectOutputs = new Set<string>();
+            return apiSection.apiList.reduce((acc, curVal) => {
+                if (curVal?.directOutput?.name) {
+                    const [moduleName, dataName] = curVal?.directOutput?.name?.split("->");
+                    if (dataName) {
+                        const dataTypeName = `${dataName?.replace("[]", "")}`;
+                        const importKey = `${moduleName}->${dataTypeName}`;
+                        if (!importedDirectOutputs.has(importKey)) {
+                            importedDirectOutputs.add(importKey);
+                            acc = acc + `import {${dataTypeName},I_${dataTypeName}} from "../../../data/${moduleName}";\n`;
+                        }
+                    }
                 }
-            }
-            return acc
-        }, '')}
+                return acc
+            }, '');
+        })()}
 
 
 import { ApiStatus } from "../../../data/common";
@@ -430,15 +438,19 @@ export const GeneratedReducers = {
             return acc
         }, '')} } from "./data";` : ''}
 
-        ${apiSection.apiList.reduce((acc, curVal) => {
-            if (curVal?.directOutput?.name) {
-                const [moduleName, dataName] = curVal?.directOutput?.name?.split("->");
-                if (dataName) {
-                    acc = acc + `import * as ${moduleName} from "../../../data/${moduleName}";`;
+        ${(() => {
+            const importedModules = new Set<string>();
+            return apiSection.apiList.reduce((acc, curVal) => {
+                if (curVal?.directOutput?.name) {
+                    const [moduleName, dataName] = curVal?.directOutput?.name?.split("->");
+                    if (dataName && !importedModules.has(moduleName)) {
+                        importedModules.add(moduleName);
+                        acc = acc + `import * as ${moduleName} from "../../../data/${moduleName}";\n`;
+                    }
                 }
-            }
-            return acc
-        }, '')}
+                return acc
+            }, '');
+        })()}
 
         const showError = (err: AxiosError) => {
             const errorResponse: any = err.response?.data;
@@ -492,6 +504,18 @@ export const set${this.capitalizeFirstLetter(curVal.name)}Input = createAction<$
 
                 }
               }
+
+              ${
+                (inputKeyList.length > 0 && inputKeyList.length<5)?
+                `export const call${this.capitalizeFirstLetter(curVal.name)}ApiWithParams = async (${inputKeyList.length > 0 ? `${inputKeyList.reduce((acc,inputCurVal) => {
+                const inputCurValType = curVal.input[inputCurVal].type
+                acc=acc +  `${inputCurVal}: ${['string','number','boolean'].indexOf(inputCurValType) !== -1 ? inputCurValType : 'any'},`
+                return acc
+            },"")}` : ``} output: (output: ${outputKeyList.length > 0 ? outputDataTypeName : dataName ? `${moduleName}.${dataName}` : 'any'}) => any,error?: (errMsg: any) => void) => {
+                return call${this.capitalizeFirstLetter(curVal.name)}Api(${inputDataTypeName}.fromJSON({${inputKeyList.reduce((acc,cur)=>{acc=acc+cur+',';return acc},"")}}), output, error);
+              }`:''
+              }
+              
             `
             return acc
         }, '')}
@@ -501,16 +525,16 @@ export const set${this.capitalizeFirstLetter(curVal.name)}Input = createAction<$
         return code;
     }
 
-    generateApiSelectorCode(apiSection: IApiSection) {
+    generateApiSelectorCode(expressSection: IExpressSection,apiSection: IApiSection) {
         const code = `
 import { RootState } from "@/redux/store/store";
 
         ${apiSection.apiList.reduce((acc, curVal) => {
             acc = acc +
-`export const select${this.capitalizeFirstLetter(curVal.name)}Data = (state: RootState) => state.${apiSection.name.toLocaleLowerCase()}.${curVal.name}.data;\n`;
+`export const select${this.capitalizeFirstLetter(curVal.name)}Data = (state: RootState) => state.${expressSection.name}_${apiSection.name.toLocaleLowerCase()}.${curVal.name}.data;\n`;
             if (curVal.inputStore && Object.keys(curVal.input).length > 0) {
                 acc = acc +
-`export const select${this.capitalizeFirstLetter(curVal.name)}Input = (state: RootState) => state.${apiSection.name.toLocaleLowerCase()}.${curVal.name}Input;\n`;
+`export const select${this.capitalizeFirstLetter(curVal.name)}Input = (state: RootState) => state.${expressSection.name}_${apiSection.name.toLocaleLowerCase()}.${curVal.name}Input;\n`;
             }
             return acc
         }, '')}
@@ -596,7 +620,7 @@ export default genRootSaga;
                     if (type === "api") {
                         imports.add(`import { ${baseTypeName} } from '../data/${module}';`);
                     } else {
-                        imports.add(`import { ${baseTypeName} } from 'src-gen/data/${module}';`);
+                        imports.add(`import { ${baseTypeName} } from '../../../data/${module}';`);
                     }
 
                 }
@@ -610,7 +634,7 @@ export default genRootSaga;
                     if (type === "api") {
                         imports.add(`import { ${baseTypeName} } from '../data/${module}';`);
                     } else {
-                        imports.add(`import { ${baseTypeName} } from 'src-gen/data/${module}';`);
+                        imports.add(`import { ${baseTypeName} } from '../../../data/${module}';`);
                     }
 
                 }
